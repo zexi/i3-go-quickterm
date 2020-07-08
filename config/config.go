@@ -14,7 +14,7 @@ var (
 	Terminals = map[string]*Terminal{
 		"termite":        NewTerminal("termite", "-t", "-e"),
 		"alacritty":      NewTerminal("alacritty", "-t", "-e"),
-		"gnome-terminal": NewTerminal("gnome-terminal", "-t", "--"),
+		"xfce4-terminal": NewTerminal("xfce4-terminal", "-T", "-e"),
 	}
 )
 
@@ -41,14 +41,16 @@ func NewTerminal(command, titleOpt, execOpt string) *Terminal {
 	return term
 }
 
-func (term *Terminal) ToCmd() (*exec.Cmd, error) {
+func (term *Terminal) ToCmd(extraArgs ...string) (*exec.Cmd, error) {
 	if term.Title == "" {
 		return nil, fmt.Errorf("title is empty")
 	}
 	if term.ExecCommand == "" {
 		return nil, fmt.Errorf("execCmd is empty")
 	}
-	cmd := exec.Command(term.Command, term.TitleOpt, term.Title, term.ExecOpt, term.ExecCommand)
+	args := []string{term.TitleOpt, term.Title, term.ExecOpt, term.ExecCommand}
+	args = append(args, extraArgs...)
+	cmd := exec.Command(term.Command, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -60,9 +62,14 @@ func (term *Terminal) String() string {
 	return fmt.Sprintf("%s %s %s %s %s", term.Command, term.TitleOpt, term.Title, term.ExecOpt, term.ExecCommand)
 }
 
+type TerminalConfig struct {
+	Command   string   `json:"command"`
+	ExtraArgs []string `json:"extraArgs"`
+}
+
 type Config struct {
-	Term  string  `json:"term"`
-	Ratio float32 `json:"ratio"`
+	Term  *TerminalConfig `json:"terminal"`
+	Ratio float32         `json:"ratio"`
 	// Pos defines terminal pop out position, support 'top|bottom'
 	Pos string `json:"pos"`
 }
@@ -78,8 +85,10 @@ func ParseConfig(content []byte) (*Config, error) {
 	}
 
 	// set default config
-	if conf.Term == "" {
-		conf.Term = "termite"
+	if conf.Term == nil {
+		conf.Term = &TerminalConfig{
+			Command: "termite",
+		}
 	}
 	if conf.Pos == "" {
 		conf.Pos = "top"
@@ -89,9 +98,9 @@ func ParseConfig(content []byte) (*Config, error) {
 	}
 
 	// validate config
-	_, ok := Terminals[conf.Term]
+	_, ok := Terminals[conf.Term.Command]
 	if !ok {
-		return nil, fmt.Errorf("not support term: %s", conf.Term)
+		return nil, fmt.Errorf("not support term: %s", conf.Term.Command)
 	}
 	if conf.Pos != "top" && conf.Pos != "bottom" {
 		return nil, fmt.Errorf("not support pos: %s", conf.Pos)

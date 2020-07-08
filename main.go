@@ -1,13 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"regexp"
+	"time"
 
 	"go.i3wm.org/i3/v4"
 
@@ -23,22 +23,31 @@ var (
 	InPlace *bool = flag.Bool("i", false, "Run in place")
 )
 
-func initSway() {
-	// ref: https://github.com/i3/go-i3/pull/5
-	i3.SocketPathHook = func() (string, error) {
-		out, err := exec.Command("sway", "--get-socketpath").CombinedOutput()
-		if err != nil {
-			return "", fmt.Errorf("getting sway socketpath: %v (output: %s)", err, out)
-		}
-		return string(out), nil
+func isSwayRunning() bool {
+	_, err := exec.Command("pgrep", "-c", "sway$").CombinedOutput()
+	if err != nil {
+		return false
 	}
+	return true
+}
 
-	i3.IsRunningHook = func() bool {
-		out, err := exec.Command("pgrep", "-c", "sway\\$").CombinedOutput()
-		if err != nil {
-			log.Printf("sway running: %v (output: %s)", err, out)
+func initEnv() {
+	initSway := func() {
+		// ref: https://github.com/i3/go-i3/pull/5
+		i3.SocketPathHook = func() (string, error) {
+			out, err := exec.Command("sway", "--get-socketpath").CombinedOutput()
+			if err != nil {
+				return "", fmt.Errorf("getting sway socketpath: %v (output: %s)", err, out)
+			}
+			return string(out), nil
 		}
-		return bytes.Compare(out, []byte("1")) == 0
+
+		i3.IsRunningHook = func() bool {
+			return isSwayRunning()
+		}
+	}
+	if isSwayRunning() {
+		initSway()
 	}
 }
 
@@ -61,20 +70,20 @@ func FindMarkedTerm(shell string) *i3.Node {
 
 func RunTerm(conf *config.Config, shell string) error {
 	log.Printf("Run new terminal")
-	term, ok := config.Terminals[conf.Term]
+	term, ok := config.Terminals[conf.Term.Command]
 	if !ok {
-		return fmt.Errorf("not support config term: %s", conf.Term)
+		return fmt.Errorf("not support config term: %s", conf.Term.Command)
 	}
 	term.Title = "shell - i3-go-quickterm"
 	term.ExecCommand = fmt.Sprintf("%s -i", os.Args[0])
-	cmd, err := term.ToCmd()
+	cmd, err := term.ToCmd(conf.Term.ExtraArgs...)
 	if err != nil {
 		return fmt.Errorf("to terminal command: %v", err)
 	}
 	return cmd.Run()
 }
 
-func RestoreTerm(term *i3.Node, shell string) error {
+func RestoreTerm(conf *config.Config, term *i3.Node, shell string) error {
 	log.Printf("Restore terminal %d", term.ID)
 	ws, err := GetCurrentWorkspace()
 	if err != nil {
@@ -87,7 +96,7 @@ func RestoreTerm(term *i3.Node, shell string) error {
 	if nodeWs.Name != ws.Name {
 		log.Printf("Pop hide terminal, exists: %s != current: %s", nodeWs.Name, ws.Name)
 		shellMark := fmt.Sprintf(MarkQuickTerm, shell)
-		if err := PopIt(shellMark, "top", 0.25); err != nil {
+		if err := PopIt(shellMark, conf.Pos, conf.Ratio); err != nil {
 			return fmt.Errorf("try retore term: %v", err)
 		}
 	} else {
@@ -103,7 +112,7 @@ func ToggleTerm(conf *config.Config, shell string) error {
 	if term == nil {
 		return RunTerm(conf, shell)
 	}
-	return RestoreTerm(term, shell)
+	return RestoreTerm(conf, term, shell)
 }
 
 func LaunchInplace(conf *config.Config, shell string) error {
@@ -115,6 +124,12 @@ func LaunchInplace(conf *config.Config, shell string) error {
 	if err := PopIt(shellMark, conf.Pos, conf.Ratio); err != nil {
 		return fmt.Errorf("popit: %v", err)
 	}
+
+	// clear i3 sdk warning message
+	clearCmd := exec.Command("clear")
+	clearCmd.Stdout = os.Stdout
+	clearCmd.Run()
+
 	loginSh := os.Getenv("SHELL")
 	cmd := exec.Command(loginSh)
 	cmd.Stdin = os.Stdin
@@ -127,7 +142,7 @@ func LaunchInplace(conf *config.Config, shell string) error {
 
 func main() {
 	flag.Parse()
-	initSway()
+	initEnv()
 
 	conf, err := config.GetConfig()
 	if err != nil {
@@ -135,6 +150,8 @@ func main() {
 	}
 
 	if *InPlace {
+		// TODO: fix this sleep
+		time.Sleep(time.Second)
 		if err := LaunchInplace(conf, "shell"); err != nil {
 			ExitErr(fmt.Errorf("launch in place: %v", err))
 		}
