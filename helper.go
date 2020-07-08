@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"go.i3wm.org/i3/v4"
-
-	"yunion.io/x/jsonutils"
 )
 
 func GetCurrentWorkspace() (*i3.Workspace, error) {
@@ -110,7 +108,6 @@ func FindNodeWorkspace(node *i3.Node) (*i3.Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get workspaces: %v", err)
 	}
-	log.Printf(fmt.Sprintf("Get workspace nodes: %s", jsonutils.Marshal(wss).PrettyString()))
 	for _, ws := range wss {
 		if found, err := IsWorkspaceContainsNode(ws, node); found {
 			return ws, nil

@@ -8,9 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"time"
 
 	"go.i3wm.org/i3/v4"
+
+	"github.com/zexi/i3-go-quickterm/config"
 )
 
 const (
@@ -21,50 +22,6 @@ const (
 var (
 	InPlace *bool = flag.Bool("i", false, "Run in place")
 )
-
-type Terminal struct {
-	Command     string
-	ExecOpt     string
-	ExecCommand string
-	TitleOpt    string
-	Title       string
-}
-
-func NewTerminal(command, titleOpt, title, execOpt, execCmd string) (*Terminal, error) {
-	if execOpt == "" {
-		execOpt = "-e"
-	}
-	if titleOpt == "" {
-		titleOpt = "-T"
-	}
-	if title == "" {
-		return nil, fmt.Errorf("title is empty")
-	}
-	if execCmd == "" {
-		return nil, fmt.Errorf("execCmd is empty")
-	}
-	term := &Terminal{
-		Command:     command,
-		TitleOpt:    titleOpt,
-		Title:       title,
-		ExecOpt:     execOpt,
-		ExecCommand: execCmd,
-	}
-	return term, nil
-}
-
-func (term *Terminal) ToCmd() *exec.Cmd {
-	cmd := exec.Command(term.Command, term.TitleOpt, term.Title, term.ExecOpt, term.ExecCommand)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = os.Environ()
-	return cmd
-}
-
-func (term *Terminal) String() string {
-	return fmt.Sprintf("%s %s %s %s %s", term.Command, term.TitleOpt, term.Title, term.ExecOpt, term.ExecCommand)
-}
 
 func initSway() {
 	// ref: https://github.com/i3/go-i3/pull/5
@@ -102,16 +59,18 @@ func FindMarkedTerm(shell string) *i3.Node {
 	return term
 }
 
-func RunTerm(shell string) error {
+func RunTerm(conf *config.Config, shell string) error {
 	log.Printf("Run new terminal")
-	term, err := NewTerminal(
-		"termite",
-		"-t", "shell - sway-quickterm",
-		"-e", fmt.Sprintf("%s -i", os.Args[0]))
-	if err != nil {
-		return fmt.Errorf("new terminal %v", err)
+	term, ok := config.Terminals[conf.Term]
+	if !ok {
+		return fmt.Errorf("not support config term: %s", conf.Term)
 	}
-	cmd := term.ToCmd()
+	term.Title = "shell - i3-go-quickterm"
+	term.ExecCommand = fmt.Sprintf("%s -i", os.Args[0])
+	cmd, err := term.ToCmd()
+	if err != nil {
+		return fmt.Errorf("to terminal command: %v", err)
+	}
 	return cmd.Run()
 }
 
@@ -139,24 +98,25 @@ func RestoreTerm(term *i3.Node, shell string) error {
 	return nil
 }
 
-func ToggleTerm(shell string) error {
+func ToggleTerm(conf *config.Config, shell string) error {
 	term := FindMarkedTerm(shell)
 	if term == nil {
-		return RunTerm(shell)
+		return RunTerm(conf, shell)
 	}
 	return RestoreTerm(term, shell)
 }
 
-func LaunchInplace(shell string) error {
+func LaunchInplace(conf *config.Config, shell string) error {
 	shellMark := fmt.Sprintf(MarkQuickTerm, shell)
 	i3.RunCommand(fmt.Sprintf("mark %s", shellMark))
 	if err := MoveBack(fmt.Sprintf("[con_mark=%s]", shellMark)); err != nil {
 		return fmt.Errorf("moveback: %v", err)
 	}
-	if err := PopIt(shellMark, "top", 0.25); err != nil {
-		return fmt.Errorf("popit %v", err)
+	if err := PopIt(shellMark, conf.Pos, conf.Ratio); err != nil {
+		return fmt.Errorf("popit: %v", err)
 	}
-	cmd := exec.Command("zsh")
+	loginSh := os.Getenv("SHELL")
+	cmd := exec.Command(loginSh)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -168,14 +128,19 @@ func LaunchInplace(shell string) error {
 func main() {
 	flag.Parse()
 	initSway()
+
+	conf, err := config.GetConfig()
+	if err != nil {
+		ExitErr(fmt.Errorf("get config: %v", err))
+	}
+
 	if *InPlace {
-		time.Sleep(time.Second)
-		if err := LaunchInplace("shell"); err != nil {
+		if err := LaunchInplace(conf, "shell"); err != nil {
 			ExitErr(fmt.Errorf("launch in place: %v", err))
 		}
 		return
 	}
-	if err := ToggleTerm("shell"); err != nil {
+	if err := ToggleTerm(conf, "shell"); err != nil {
 		ExitErr(fmt.Errorf("toggle term: %v", err))
 		return
 	}
