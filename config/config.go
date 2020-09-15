@@ -24,6 +24,7 @@ type Terminal struct {
 	ExecCommand string
 	TitleOpt    string
 	Title       string
+	Env         []string
 }
 
 func NewTerminal(command, titleOpt, execOpt string) *Terminal {
@@ -41,7 +42,7 @@ func NewTerminal(command, titleOpt, execOpt string) *Terminal {
 	return term
 }
 
-func (term *Terminal) ToCmd(extraArgs ...string) (*exec.Cmd, error) {
+func (term *Terminal) ToCmd(env []string, extraArgs ...string) (*exec.Cmd, error) {
 	if term.Title == "" {
 		return nil, fmt.Errorf("title is empty")
 	}
@@ -55,6 +56,7 @@ func (term *Terminal) ToCmd(extraArgs ...string) (*exec.Cmd, error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, env...)
 	return cmd, nil
 }
 
@@ -65,6 +67,7 @@ func (term *Terminal) String() string {
 type TerminalConfig struct {
 	Command   string   `json:"command"`
 	ExtraArgs []string `json:"extraArgs"`
+	Env       []string `json:"env"`
 }
 
 type Config struct {

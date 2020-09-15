@@ -76,7 +76,7 @@ func RunTerm(conf *config.Config, shell string) error {
 	}
 	term.Title = "shell - i3-go-quickterm"
 	term.ExecCommand = fmt.Sprintf("%s -i", os.Args[0])
-	cmd, err := term.ToCmd(conf.Term.ExtraArgs...)
+	cmd, err := term.ToCmd(conf.Term.Env, conf.Term.ExtraArgs...)
 	if err != nil {
 		return fmt.Errorf("to terminal command: %v", err)
 	}
